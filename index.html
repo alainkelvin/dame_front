@@ -1,0 +1,2091 @@
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P2P Checkers Game</title>
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+    <style>
+        :root {
+            --board-size: min(70vw, 70vh, 500px);
+            --light-square: #f0d9b5;
+            --dark-square: #b58863;
+            --highlight: #5D5CDE;
+            --highlight-alpha: rgba(93, 92, 222, 0.4);
+            --text-color: #333;
+            --bg-color: #ffffff;
+            --panel-bg: #f5f5f5;
+            --red-piece: #c93636;
+            --black-piece: #333333;
+            --crown-color: #ffd700;
+            --network-connected: #4CAF50;
+            --network-connecting: #FFC107;
+            --network-error: #F44336;
+            --spectator-color: #9c27b0;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --light-square: #6b6b6b;
+                --dark-square: #3a3a3a;
+                --highlight: #5D5CDE;
+                --highlight-alpha: rgba(93, 92, 222, 0.4);
+                --text-color: #f0f0f0;
+                --bg-color: #181818;
+                --panel-bg: #2a2a2a;
+                --red-piece: #ff5252;
+                --black-piece: #1a1a1a;
+                --crown-color: #ffd700;
+                --spectator-color: #ce93d8;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            touch-action: manipulation;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            padding: 20px;
+            transition: background-color 0.3s ease;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: var(--board-size);
+        }
+
+        .board {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            border: 2px solid var(--dark-square);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+            margin-bottom: 20px;
+        }
+
+        .square {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .square.light {
+            background-color: var(--light-square);
+        }
+
+        .square.dark {
+            background-color: var(--dark-square);
+        }
+
+        .square.selected {
+            background-color: var(--highlight);
+        }
+
+        .square.valid-move::after {
+            content: '';
+            position: absolute;
+            width: 30%;
+            height: 30%;
+            border-radius: 50%;
+            background-color: var(--highlight-alpha);
+        }
+
+        .piece {
+            width: 80%;
+            height: 80%;
+            border-radius: 50%;
+            position: relative;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        .piece:hover {
+            transform: scale(1.05);
+        }
+
+        .piece.red {
+            background-color: var(--red-piece);
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .piece.black {
+            background-color: var(--black-piece);
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .piece.king::after {
+            content: '♔';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.5rem;
+            color: var(--crown-color);
+        }
+
+        .game-info {
+            width: 100%;
+            padding: 15px;
+            border-radius: 8px;
+            background-color: var(--panel-bg);
+            margin-bottom: 20px;
+            text-align: center;
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2);
+        }
+
+        .turn-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .indicator-piece {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+        }
+
+        .indicator-piece.red {
+            background-color: var(--red-piece);
+        }
+
+        .indicator-piece.black {
+            background-color: var(--black-piece);
+        }
+
+        .message {
+            font-weight: bold;
+            min-height: 24px;
+            margin-bottom: 10px;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+
+        button {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            background-color: var(--highlight);
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.2s ease;
+        }
+
+        button:hover {
+            background-color: #4a49b8;
+        }
+
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        input {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+            text-align: center;
+            min-width: 120px;
+        }
+
+        .network-section {
+            width: 100%;
+            padding: 15px;
+            border-radius: 8px;
+            background-color: var(--panel-bg);
+            margin-bottom: 20px;
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2);
+        }
+
+        .network-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: var(--network-connecting);
+        }
+
+        .status-indicator.connected {
+            background-color: var(--network-connected);
+        }
+
+        .status-indicator.error {
+            background-color: var(--network-error);
+        }
+
+        .connection-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .connection-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .player-role {
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .section-title {
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .local-id-section {
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .local-id {
+            font-family: monospace;
+            padding: 5px 10px;
+            background-color: rgba(0, 0, 0, 0.1);
+            border-radius: 4px;
+            margin-top: 5px;
+            word-break: break-all;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .local-id:hover {
+            background-color: rgba(93, 92, 222, 0.2);
+        }
+
+        .room-id-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .spectator-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 8px;
+            border-radius: 12px;
+            background-color: var(--spectator-color);
+            color: white;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+
+        .spectator-count {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 8px;
+            font-size: 14px;
+            color: var(--spectator-color);
+        }
+
+        .spectator-icon {
+            margin-right: 5px;
+        }
+
+        .qr-code-container {
+            margin-top: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #qrcode {
+            background-color: white;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        .player-list {
+            margin-top: 10px;
+            width: 100%;
+        }
+
+        .player-list-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        .player-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px 10px;
+            margin-bottom: 5px;
+            border-radius: 4px;
+            background-color: rgba(0, 0, 0, 0.05);
+            font-size: 14px;
+        }
+
+        .player-role-badge {
+            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            color: white;
+        }
+
+        .player-role-badge.red {
+            background-color: var(--red-piece);
+        }
+
+        .player-role-badge.black {
+            background-color: var(--black-piece);
+        }
+
+        .player-role-badge.spectator {
+            background-color: var(--spectator-color);
+        }
+
+        .game-link {
+            margin-top: 5px;
+            font-size: 14px;
+            text-decoration: underline;
+            cursor: pointer;
+            color: var(--highlight);
+        }
+
+        #share-button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            margin-top: 5px;
+        }
+
+        .share-icon {
+            margin-right: 5px;
+        }
+
+        .chat-container {
+            width: 100%;
+            margin-top: 20px;
+            background-color: var(--panel-bg);
+            border-radius: 8px;
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            max-height: 200px;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            max-height: 150px;
+        }
+
+        .chat-input-area {
+            display: flex;
+            border-top: 1px solid rgba(0, 0, 0, 0.1);
+            padding: 8px;
+        }
+
+        .chat-input {
+            flex: 1;
+            border: none;
+            background-color: transparent;
+            padding: 5px;
+            font-size: 14px;
+            color: var(--text-color);
+            min-height: 36px;
+        }
+
+        .chat-input:focus {
+            outline: none;
+        }
+
+        .chat-send-btn {
+            background-color: var(--highlight);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+
+        .chat-message {
+            margin-bottom: 8px;
+            word-break: break-word;
+            font-size: 14px;
+        }
+
+        .chat-name {
+            font-weight: bold;
+            margin-right: 5px;
+        }
+
+        .chat-name.red {
+            color: var(--red-piece);
+        }
+
+        .chat-name.black {
+            color: var(--black-piece);
+        }
+
+        .chat-name.spectator {
+            color: var(--spectator-color);
+        }
+
+        .tab-container {
+            width: 100%;
+            margin-bottom: 15px;
+        }
+
+        .tab-buttons {
+            display: flex;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .tab-button {
+            padding: 10px 15px;
+            border: none;
+            background-color: transparent;
+            color: var(--text-color);
+            cursor: pointer;
+        }
+
+        .tab-button.active {
+            border-bottom: 3px solid var(--highlight);
+            font-weight: bold;
+        }
+
+        .tab-content {
+            padding: 15px 0;
+        }
+
+        .tab-panel {
+            display: none;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 1.5rem;
+                margin-bottom: 15px;
+            }
+            
+            .game-info, .network-section {
+                padding: 10px;
+            }
+            
+            button {
+                padding: 6px 12px;
+                font-size: 14px;
+            }
+
+            input {
+                font-size: 14px;
+                min-width: 100px;
+            }
+        }
+
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 120px;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 12px;
+        }
+
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>P2P Checkers</h1>
+        
+        <div class="tab-container">
+            <div class="tab-buttons">
+                <button class="tab-button active" data-tab="setup">Setup</button>
+                <button class="tab-button" data-tab="game">Game</button>
+            </div>
+            <div class="tab-content">
+                <div class="tab-panel active" id="setup-panel">
+                    <div class="network-section">
+                        <div class="network-status">
+                            <div class="status-indicator" id="status-indicator"></div>
+                            <span id="connection-status">Not connected</span>
+                        </div>
+                        
+                        <div class="connection-controls">
+                            <div class="local-id-section">
+                                <div class="section-title">Your Connection ID:</div>
+                                <div class="local-id tooltip" id="local-id">Generating...</div>
+                                <span class="tooltiptext">Click to copy</span>
+                            </div>
+                            
+                            <div class="room-id-section" id="room-id-section" style="display: none;">
+                                <div class="section-title">Game Room ID:</div>
+                                <div class="local-id tooltip" id="room-id">Not available</div>
+                                <span class="tooltiptext">Click to copy</span>
+                                <div class="spectator-count" id="spectator-count">
+                                    <span class="spectator-icon">👁️</span>
+                                    <span id="spectator-number">0</span> spectators watching
+                                </div>
+                                <button id="share-button">
+                                    <span class="share-icon">🔗</span>
+                                    Share Game
+                                </button>
+                                <div class="qr-code-container">
+                                    <span>Scan to watch:</span>
+                                    <div id="qrcode"></div>
+                                </div>
+                            </div>
+                            
+                            <div class="connection-row">
+                                <input type="text" id="peer-id-input" placeholder="Enter peer ID">
+                                <button id="connect-btn">Connect to Peer</button>
+                            </div>
+                            
+                            <div class="connection-row">
+                                <button id="host-btn">Host as Red</button>
+                                <button id="join-btn">Join as Black</button>
+                                <button id="spectate-btn">Watch as Spectator</button>
+                            </div>
+                            
+                            <div class="player-list" id="player-list-container" style="display: none;">
+                                <div class="player-list-title">Connected Players:</div>
+                                <div id="player-list">
+                                    <!-- Player items will be added here dynamically -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tab-panel" id="game-panel">
+                    <div class="game-info">
+                        <div class="player-role" id="player-role">Role: Spectator</div>
+                        <div class="turn-indicator">
+                            <span>Current Turn:</span>
+                            <div class="indicator-piece red" id="current-turn"></div>
+                            <span id="turn-text">Red</span>
+                        </div>
+                        <div class="message" id="message"></div>
+                        <div class="controls">
+                            <button id="restart-btn" disabled>Restart Game</button>
+                            <button id="setup-btn">Back to Setup</button>
+                        </div>
+                    </div>
+                    
+                    <div class="board" id="board"></div>
+                    
+                    <div class="chat-container">
+                        <div class="chat-messages" id="chat-messages">
+                            <!-- Chat messages will be added here dynamically -->
+                        </div>
+                        <div class="chat-input-area">
+                            <input type="text" class="chat-input" id="chat-input" placeholder="Type a message...">
+                            <button class="chat-send-btn" id="chat-send-btn">Send</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // DOM Elements
+            const board = document.getElementById('board');
+            const message = document.getElementById('message');
+            const turnIndicator = document.getElementById('current-turn');
+            const turnText = document.getElementById('turn-text');
+            const restartBtn = document.getElementById('restart-btn');
+            const setupBtn = document.getElementById('setup-btn');
+            const statusIndicator = document.getElementById('status-indicator');
+            const connectionStatus = document.getElementById('connection-status');
+            const localIdDisplay = document.getElementById('local-id');
+            const roomIdDisplay = document.getElementById('room-id');
+            const roomIdSection = document.getElementById('room-id-section');
+            const spectatorCount = document.getElementById('spectator-number');
+            const peerIdInput = document.getElementById('peer-id-input');
+            const connectBtn = document.getElementById('connect-btn');
+            const hostBtn = document.getElementById('host-btn');
+            const joinBtn = document.getElementById('join-btn');
+            const spectateBtn = document.getElementById('spectate-btn');
+            const playerRole = document.getElementById('player-role');
+            const shareButton = document.getElementById('share-button');
+            const qrcodeElement = document.getElementById('qrcode');
+            const playerListContainer = document.getElementById('player-list-container');
+            const playerList = document.getElementById('player-list');
+            const chatMessages = document.getElementById('chat-messages');
+            const chatInput = document.getElementById('chat-input');
+            const chatSendBtn = document.getElementById('chat-send-btn');
+            const tabButtons = document.querySelectorAll('.tab-button');
+            const tabPanels = document.querySelectorAll('.tab-panel');
+            
+            // Network State
+            let peer = null;
+            let connections = {
+                host: null,      // Connection to the host (for black player and spectators)
+                player: null,    // Connection to the black player (for host)
+                spectators: []   // Connections to spectators (for host)
+            };
+            let localRole = 'spectator'; // 'red', 'black', or 'spectator'
+            let isConnected = false;
+            let gameStateVersion = 0;
+            let roomId = null;
+            let connectedPlayers = {
+                red: { id: null, name: "Red Player" },
+                black: { id: null, name: "Black Player" },
+                spectators: []
+            };
+            let localName = "Player " + Math.floor(Math.random() * 1000);
+            
+            // Game state
+            let gameState = {
+                board: [],
+                currentPlayer: 'red',
+                selectedPiece: null,
+                validMoves: [],
+                jumpMoves: [],
+                mustJump: false,
+                gameOver: false,
+                mustContinueJumping: false,
+                jumpingPiece: null,
+                version: 0
+            };
+            
+            // Tab switching
+            tabButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    // Remove active class from all buttons and panels
+                    tabButtons.forEach(b => b.classList.remove('active'));
+                    tabPanels.forEach(p => p.classList.remove('active'));
+                    
+                    // Add active class to clicked button and corresponding panel
+                    button.classList.add('active');
+                    const tabId = button.getAttribute('data-tab');
+                    document.getElementById(tabId + '-panel').classList.add('active');
+                });
+            });
+            
+            setupBtn.addEventListener('click', () => {
+                tabButtons[0].click(); // Click the setup tab button
+            });
+            
+            // Copy ID to clipboard when clicked
+            localIdDisplay.addEventListener('click', () => {
+                copyToClipboard(localIdDisplay.textContent);
+            });
+            
+            roomIdDisplay.addEventListener('click', () => {
+                copyToClipboard(roomIdDisplay.textContent);
+            });
+            
+            function copyToClipboard(text) {
+                navigator.clipboard.writeText(text).then(() => {
+                    // Show copied notification
+                    const tooltiptext = document.querySelector('.tooltiptext');
+                    tooltiptext.textContent = "Copied!";
+                    setTimeout(() => {
+                        tooltiptext.textContent = "Click to copy";
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Could not copy text: ', err);
+                });
+            }
+            
+            // Share button functionality
+            shareButton.addEventListener('click', () => {
+                if (!roomId) return;
+                
+                // Create share URL
+                const shareUrl = `${window.location.href.split('?')[0]}?room=${roomId}`;
+                
+                // Check if Web Share API is available
+                if (navigator.share) {
+                    navigator.share({
+                        title: 'Join my Checkers game!',
+                        text: 'Watch our game of checkers in real-time!',
+                        url: shareUrl
+                    }).catch(err => {
+                        console.error('Error sharing:', err);
+                        copyToClipboard(shareUrl);
+                    });
+                } else {
+                    // Fallback to copying the URL
+                    copyToClipboard(shareUrl);
+                }
+            });
+            
+            // Initialize PeerJS
+            //function initPeer() {
+            //    // Create a random ID for this peer
+            //    const randomId = Math.random().toString(36).substring(2, 10);
+            //    
+            //    peer = new Peer(randomId, {
+            //        debug: 2,
+            //        config: {
+            //            iceServers: [
+            //                { urls: "stun:stun.l.google.com:19302" },
+            //                { urls: "stun:stun1.l.google.com:19302" }
+            //            ]
+            //        }
+            //    });
+            //    
+            //    peer.on('open', (id) => {
+            //        console.log('My peer ID is:', id);
+            //        localIdDisplay.textContent = id;
+            //        
+            //        // Check if URL contains roomId parameter
+            //        const urlParams = new URLSearchParams(window.location.search);
+            //        const roomIdParam = urlParams.get('room');
+            //        
+            //        if (roomIdParam) {
+            //            // Auto-connect as spectator if roomId is provided in URL
+            //            peerIdInput.value = roomIdParam;
+            //            connectToPeer(roomIdParam).then(() => {
+            //                if (isConnected) {
+            //                    becomeSpectator();
+            //                }
+            //            });
+            //        }
+            //        
+            //        updateConnectionStatus('ready');
+            //        enableConnectionButtons();
+            //    });
+            //    
+            //    peer.on('connection', (connection) => {
+            //        console.log('New connection from:', connection.peer);
+            //        
+            //        // Set up connection handlers
+            //        setupConnectionHandlers(connection);
+            //        
+            //        // If we're hosting, we'll handle multiple connections
+            //        if (localRole === 'red') {
+            //            // If black player slot is empty, this might be the black player
+            //            if (!connections.player) {
+            //                // Will be confirmed when they identify their role
+            //                connections.player = connection;
+            //            } else {
+            //                // Otherwise, treat as spectator
+            //                connections.spectators.push(connection);
+            //                updateSpectatorCount();
+            //            }
+            //            
+            //            // Send current game state to the new connection
+            //            sendGameState(connection);
+            //            
+            //            // Broadcast the new connection to everyone
+            //            broadcastConnectedPlayers();
+            //        } else if (localRole === 'black') {
+            //            // Black player can also have spectators
+            //            connections.spectators.push(connection);
+            //            updateSpectatorCount();
+            //            
+            //            // Forward to host to track
+            //            if (connections.host) {
+            //                connections.host.send({
+            //                    type: 'newSpectator',
+            //                    id: connection.peer
+            //                });
+            //            }
+            //        }
+            //    });
+            //    
+            //    peer.on('error', (err) => {
+            //        console.error('Peer error:', err);
+            //        updateConnectionStatus('error', err.message);
+            //    });
+            // Initialize PeerJS
+            function initPeer() {
+                // Create a random ID for this peer
+                const randomId = Math.random().toString(36).substring(2, 10);
+
+                peer = new Peer(randomId, {
+                    host: 'localhost',
+                    port: 9000,
+                    path: '/myapp',
+                    secure: false,
+                    debug: 2,
+                    config: {
+                        iceServers: [
+                            { urls: "stun:stun.l.google.com:19302" },
+                            { urls: "stun:stun1.l.google.com:19302" }
+                        ]
+                    }
+                });
+
+                peer.on('open', (id) => {
+                    console.log('My peer ID is:', id);
+                    localIdDisplay.textContent = id;
+
+                    // Check if URL contains roomId parameter
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const roomIdParam = urlParams.get('room');
+
+                    if (roomIdParam) {
+                        // Auto-connect as spectator if roomId is provided in URL
+                        peerIdInput.value = roomIdParam;
+                        connectToPeer(roomIdParam).then(() => {
+                            if (isConnected) {
+                                becomeSpectator();
+                            }
+                        });
+                    }
+
+                    updateConnectionStatus('ready');
+                    enableConnectionButtons();
+                });
+
+                peer.on('connection', (connection) => {
+                    console.log('New connection from:', connection.peer);
+
+                    // Set up connection handlers
+                    setupConnectionHandlers(connection);
+
+                    // If we're hosting, we'll handle multiple connections
+                    if (localRole === 'red') {
+                        if (!connections.player) {
+                            connections.player = connection;
+                        } else {
+                            connections.spectators.push(connection);
+                            updateSpectatorCount();
+                        }
+
+                        sendGameState(connection);
+                        broadcastConnectedPlayers();
+                    } else if (localRole === 'black') {
+                        connections.spectators.push(connection);
+                        updateSpectatorCount();
+
+                        if (connections.host) {
+                            connections.host.send({
+                                type: 'newSpectator',
+                                id: connection.peer
+                            });
+                        }
+                    }
+                });
+
+                peer.on('error', (err) => {
+                    console.error('Peer error:', err);
+                    updateConnectionStatus('error', err.message);
+                });
+            }
+            
+            
+            // Connect to a peer
+            async function connectToPeer(peerId) {
+                updateConnectionStatus('connecting', `Connecting to ${peerId}...`);
+                
+                try {
+                    const connection = peer.connect(peerId, {
+                        reliable: true
+                    });
+                    
+                    await new Promise((resolve, reject) => {
+                        // Set timeout for connection
+                        const timeout = setTimeout(() => {
+                            reject(new Error('Connection timeout'));
+                        }, 10000);
+                        
+                        connection.on('open', () => {
+                            clearTimeout(timeout);
+                            resolve(connection);
+                        });
+                        
+                        connection.on('error', (err) => {
+                            clearTimeout(timeout);
+                            reject(err);
+                        });
+                    });
+                    
+                    // Connection successful
+                    console.log('Connected to peer:', peerId);
+                    setupConnectionHandlers(connection);
+                    
+                    // Store the connection
+                    connections.host = connection;
+                    isConnected = true;
+                    updateConnectionStatus('connected', `Connected to ${peerId}`);
+                    
+                    // Enable game controls after connected
+                    restartBtn.disabled = (localRole !== 'red');
+                    
+                    return true;
+                } catch (err) {
+                    console.error('Connection failed:', err);
+                    updateConnectionStatus('error', 'Connection failed: ' + err.message);
+                    return false;
+                }
+            }
+            
+            // Setup connection event handlers
+            function setupConnectionHandlers(connection) {
+                connection.on('data', (data) => {
+                    handlePeerMessage(data, connection);
+                });
+                
+                connection.on('close', () => {
+                    console.log('Connection closed:', connection.peer);
+                    
+                    // Handle cleanup based on role
+                    if (localRole === 'red') {
+                        // If the black player disconnected
+                        if (connections.player && connections.player.peer === connection.peer) {
+                            connections.player = null;
+                            connectedPlayers.black.id = null;
+                            message.textContent = "Black player disconnected.";
+                        } else {
+                            // Remove from spectators list
+                            connections.spectators = connections.spectators.filter(conn => conn.peer !== connection.peer);
+                            connectedPlayers.spectators = connectedPlayers.spectators.filter(spec => spec.id !== connection.peer);
+                        }
+                        
+                        // Update UI and broadcast changes
+                        updateSpectatorCount();
+                        updatePlayerList();
+                        broadcastConnectedPlayers();
+                    } else if (localRole === 'black') {
+                        // If host disconnected, game is over
+                        if (connections.host && connections.host.peer === connection.peer) {
+                            connections.host = null;
+                            isConnected = false;
+                            message.textContent = "Host (Red player) disconnected.";
+                            restartBtn.disabled = true;
+                            updateConnectionStatus('disconnected');
+                        } else {
+                            // Remove from spectators list
+                            connections.spectators = connections.spectators.filter(conn => conn.peer !== connection.peer);
+                            updateSpectatorCount();
+                        }
+                    } else if (localRole === 'spectator') {
+                        // If connection to host is lost
+                        if (connections.host && connections.host.peer === connection.peer) {
+                            connections.host = null;
+                            isConnected = false;
+                            message.textContent = "Host disconnected.";
+                            updateConnectionStatus('disconnected');
+                        }
+                    }
+                });
+                
+                connection.on('error', (err) => {
+                    console.error('Connection error:', err);
+                });
+            }
+            
+            // Send a message to a specific connection
+            function sendToPeer(connection, data) {
+                if (connection && connection.open) {
+                    connection.send(data);
+                    return true;
+                }
+                return false;
+            }
+            
+            // Broadcast a message to all connections
+            function broadcast(data) {
+                let sentCount = 0;
+                
+                // Send to specific player if connected
+                if (connections.player && connections.player.open) {
+                    connections.player.send(data);
+                    sentCount++;
+                }
+                
+                // Send to host if connected
+                if (connections.host && connections.host.open) {
+                    connections.host.send(data);
+                    sentCount++;
+                }
+                
+                // Send to all spectators
+                for (const connection of connections.spectators) {
+                    if (connection.open) {
+                        connection.send(data);
+                        sentCount++;
+                    }
+                }
+                
+                return sentCount;
+            }
+            
+            // Host a game (Red player)
+            function hostGame() {
+                localRole = 'red';
+                playerRole.textContent = 'Role: Red (Host)';
+                
+                // Disable role buttons after selection
+                hostBtn.disabled = true;
+                joinBtn.disabled = true;
+                spectateBtn.disabled = true;
+                
+                // Enable restart button for host
+                restartBtn.disabled = false;
+                
+                // Set up room ID (same as peer ID for simplicity)
+                roomId = peer.id;
+                roomIdDisplay.textContent = roomId;
+                roomIdSection.style.display = 'flex';
+                playerListContainer.style.display = 'block';
+                
+                // Store host info
+                connectedPlayers.red.id = peer.id;
+                connectedPlayers.red.name = localName;
+                
+                // Generate QR code for the room
+                generateQRCode();
+                
+                // Initialize a new game
+                initBoard();
+                
+                // Switch to game tab
+                document.querySelector('.tab-button[data-tab="game"]').click();
+                
+                // Wait for a black player to connect
+                message.textContent = "Waiting for a player to join as Black...";
+                
+                // Update the player list
+                updatePlayerList();
+            }
+            
+            // Join a game (Black player)
+            function joinGame() {
+                if (!connections.host) {
+                    message.textContent = "Not connected to a host. Connect first.";
+                    return;
+                }
+                
+                localRole = 'black';
+                playerRole.textContent = 'Role: Black (Guest)';
+                
+                // Disable role buttons after selection
+                hostBtn.disabled = true;
+                joinBtn.disabled = true;
+                spectateBtn.disabled = true;
+                
+                // Set room ID
+                roomId = connections.host.peer;
+                roomIdDisplay.textContent = roomId;
+                roomIdSection.style.display = 'flex';
+                playerListContainer.style.display = 'block';
+                
+                // Send role identification to host
+                connections.host.send({
+                    type: 'identifyRole',
+                    role: 'black',
+                    name: localName
+                });
+                
+                // Request current game state from host
+                connections.host.send({ type: 'requestGameState' });
+                
+                // Switch to game tab
+                document.querySelector('.tab-button[data-tab="game"]').click();
+            }
+            
+            // Join as spectator
+            function becomeSpectator() {
+                if (!connections.host) {
+                    message.textContent = "Not connected to a host. Connect first.";
+                    return;
+                }
+                
+                localRole = 'spectator';
+                playerRole.textContent = 'Role: Spectator';
+                
+                // Disable role buttons after selection
+                hostBtn.disabled = true;
+                joinBtn.disabled = true;
+                spectateBtn.disabled = true;
+                
+                // Set room ID
+                roomId = connections.host.peer;
+                roomIdDisplay.textContent = roomId;
+                roomIdSection.style.display = 'none'; // Spectators don't need to show this
+                playerListContainer.style.display = 'block';
+                
+                // Identify as spectator to the host
+                connections.host.send({
+                    type: 'identifyRole',
+                    role: 'spectator',
+                    name: localName
+                });
+                
+                // Request current game state from host
+                connections.host.send({ type: 'requestGameState' });
+                
+                // Switch to game tab
+                document.querySelector('.tab-button[data-tab="game"]').click();
+            }
+            
+            // Generate QR code for the room
+            function generateQRCode() {
+                if (!roomId) return;
+                
+                // Clear previous QR code
+                qrcodeElement.innerHTML = '';
+                
+                // Generate the URL with room ID parameter
+                const url = `${window.location.href.split('?')[0]}?room=${roomId}`;
+                
+                // Generate QR code using the QRCode library
+                QRCode.toCanvas(qrcodeElement, url, { width: 150 }, function (error) {
+                    if (error) console.error(error);
+                });
+            }
+            
+            // Update the player list UI
+            function updatePlayerList() {
+                playerList.innerHTML = '';
+                
+                // Add red player
+                if (connectedPlayers.red.id) {
+                    addPlayerToList(connectedPlayers.red.name, 'red', connectedPlayers.red.id === peer.id);
+                } else {
+                    addPlayerToList('Waiting for Red player...', 'red', false);
+                }
+                
+                // Add black player
+                if (connectedPlayers.black.id) {
+                    addPlayerToList(connectedPlayers.black.name, 'black', connectedPlayers.black.id === peer.id);
+                } else {
+                    addPlayerToList('Waiting for Black player...', 'black', false);
+                }
+                
+                // Add spectators
+                connectedPlayers.spectators.forEach(spectator => {
+                    addPlayerToList(spectator.name, 'spectator', spectator.id === peer.id);
+                });
+            }
+            
+            // Add a player to the player list UI
+            function addPlayerToList(name, role, isYou) {
+                const playerItem = document.createElement('div');
+                playerItem.className = 'player-item';
+                
+                const playerName = document.createElement('span');
+                playerName.textContent = name + (isYou ? ' (You)' : '');
+                
+                const roleBadge = document.createElement('span');
+                roleBadge.className = `player-role-badge ${role}`;
+                roleBadge.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+                
+                playerItem.appendChild(playerName);
+                playerItem.appendChild(roleBadge);
+                playerList.appendChild(playerItem);
+            }
+            
+            // Update the spectator count UI
+            function updateSpectatorCount() {
+                const count = connections.spectators.length;
+                spectatorCount.textContent = count;
+            }
+            
+            // Broadcast the current list of connected players
+            function broadcastConnectedPlayers() {
+                if (localRole !== 'red') return; // Only the host needs to broadcast this
+                
+                broadcast({
+                    type: 'playerList',
+                    players: connectedPlayers
+                });
+            }
+
+            // Broadcast a message to all connections except the sender
+            // function broadcastExcept(data, senderConnection) {
+            //     // Retransmettre au joueur noir s'il n'est pas l'expéditeur
+            //     if (connections.player && connections.player.open && connections.player !== senderConnection) {
+            //         connections.player.send(data);
+            //     }
+            // 
+            //     // Retransmettre à tous les spectateurs sauf l'expéditeur
+            //     for (const connection of connections.spectators) {
+            //         if (connection.open && connection !== senderConnection) {
+            //             connection.send(data);
+            //         }
+            //     }
+            // }
+
+            // Broadcast a message to all connections except the sender
+            function broadcastExcept(data, senderConnection) {
+                // Retransmettre au joueur noir s'il n'est pas l'expéditeur
+                if (connections.player && connections.player.open && connections.player.peer !== senderConnection.peer) {
+                    connections.player.send(data);
+                }
+            
+                // Retransmettre à tous les spectateurs sauf l'expéditeur
+                for (const connection of connections.spectators) {
+                    if (connection.open && connection.peer !== senderConnection.peer) {
+                        connection.send(data);
+                    }
+                }
+            }
+            
+            // Handle messages from peers
+            function handlePeerMessage(data, connection) {
+                console.log('Received message:', data);
+
+                
+                
+                switch (data.type) {
+                    case 'gameState':
+                        // Only update if the received state is newer
+                        if (data.state.version > gameStateVersion) {
+                            // Save our version number to avoid race conditions
+                            gameStateVersion = data.state.version;
+                            updateGameStateFromPeer(data.state);
+                        }
+                        break;
+                        
+                    case 'movePiece':
+                        handleRemoteMove(data.fromRow, data.fromCol, data.toRow, data.toCol);
+                        break;
+                        
+                    case 'requestGameState':
+                        // Send current game state to the requesting peer
+                        if (localRole === 'red') {
+                            sendGameState(connection);
+                        } else if (localRole === 'black' && connections.spectators.includes(connection)) {
+                            // Black player can also send game state to their spectators
+                            sendGameState(connection);
+                        }
+                        break;
+                        
+                    case 'restart':
+                        // Restart the game
+                        restartGame();
+                        break;
+                        
+                    case 'identifyRole':
+                        handleRoleIdentification(data, connection);
+                        break;
+                        
+                    case 'playerList':
+                        // Update our local copy of the player list
+                        connectedPlayers = data.players;
+                        updatePlayerList();
+                        break;
+                        
+                    case 'newSpectator':
+                        // Host receives notification of a new spectator that connected to the black player
+                        if (localRole === 'red') {
+                            // Add to spectator count without direct connection
+                            if (!connectedPlayers.spectators.some(s => s.id === data.id)) {
+                                connectedPlayers.spectators.push({ id: data.id, name: "Spectator" });
+                                updateSpectatorCount();
+                                updatePlayerList();
+                                broadcastConnectedPlayers();
+                            }
+                        }
+                        break;
+                        
+                    case 'chat':
+                        // Add chat message to UI
+                        addChatMessage(data.name, data.role, data.message);
+
+                        // FIX: Si nous sommes l'hôte (Rouge), nous devons retransmettre 
+                        // le message de chat à tous les autres participants !
+                        if (localRole === 'red') {
+                            broadcastExcept(data, connection);
+                        }
+                        break;
+                }
+            }
+            
+            // Handle role identification messages
+            function handleRoleIdentification(data, connection) {
+                if (localRole !== 'red') return; // Only host needs to handle this
+                
+                if (data.role === 'black') {
+                    // Confirm this connection as the black player
+                    connections.player = connection;
+                    connectedPlayers.black.id = connection.peer;
+                    connectedPlayers.black.name = data.name;
+                    
+                    // Remove from spectators list if they were there
+                    connections.spectators = connections.spectators.filter(conn => conn.peer !== connection.peer);
+                    connectedPlayers.spectators = connectedPlayers.spectators.filter(spec => spec.id !== connection.peer);
+                    
+                    // Add welcome message to chat
+                    const welcomeMessage = `Black player ${data.name} has joined the game.`;
+                    broadcast({
+                        type: 'chat',
+                        name: 'System',
+                        role: 'system',
+                        message: welcomeMessage
+                    });
+                    addChatMessage('System', 'system', welcomeMessage);
+                } else if (data.role === 'spectator') {
+                    // Make sure this connection is in the spectators list
+                    if (!connections.spectators.includes(connection)) {
+                        connections.spectators.push(connection);
+                    }
+                    
+                    // Update spectator info
+                    const existingSpectator = connectedPlayers.spectators.find(s => s.id === connection.peer);
+                    if (existingSpectator) {
+                        existingSpectator.name = data.name;
+                    } else {
+                        connectedPlayers.spectators.push({
+                            id: connection.peer,
+                            name: data.name
+                        });
+                    }
+                    
+                    // Add spectator joined message to chat
+                    const spectatorMessage = `${data.name} is now spectating.`;
+                    broadcast({
+                        type: 'chat',
+                        name: 'System',
+                        role: 'system',
+                        message: spectatorMessage
+                    });
+                    addChatMessage('System', 'system', spectatorMessage);
+                }
+                
+                // Update UI
+                updateSpectatorCount();
+                updatePlayerList();
+                
+                // Broadcast updated player list
+                broadcastConnectedPlayers();
+            }
+            
+            // Send current game state to a peer
+            function sendGameState(connection = null) {
+                // Increment version before sending
+                gameState.version++;
+                gameStateVersion = gameState.version;
+                
+                // Create a copy of the state without UI-specific properties
+                const stateCopy = {
+                    board: JSON.parse(JSON.stringify(gameState.board)),
+                    currentPlayer: gameState.currentPlayer,
+                    gameOver: gameState.gameOver,
+                    mustJump: gameState.mustJump,
+                    mustContinueJumping: gameState.mustContinueJumping,
+                    jumpingPiece: gameState.jumpingPiece,
+                    version: gameState.version
+                };
+                
+                const message = {
+                    type: 'gameState',
+                    state: stateCopy
+                };
+                
+                if (connection) {
+                    // Send to specific connection
+                    sendToPeer(connection, message);
+                } else {
+                    // Broadcast to all connections
+                    broadcast(message);
+                }
+            }
+            
+            // Update the game state from received data
+            function updateGameStateFromPeer(state) {
+                // Deep copy the board state
+                gameState.board = JSON.parse(JSON.stringify(state.board));
+                gameState.currentPlayer = state.currentPlayer;
+                gameState.gameOver = state.gameOver;
+                gameState.mustJump = state.mustJump;
+                gameState.mustContinueJumping = state.mustContinueJumping;
+                gameState.jumpingPiece = state.jumpingPiece;
+                gameState.version = state.version;
+                
+                // Clear local selected state to avoid confusion
+                gameState.selectedPiece = null;
+                gameState.validMoves = [];
+                gameState.jumpMoves = [];
+                
+                // Redraw the board to reflect the new state
+                redrawBoard();
+                updateGameInfo();
+            }
+            
+            // Handle a move from the remote player
+            function handleRemoteMove(fromRow, fromCol, toRow, toCol) {
+                // Store selected piece
+                gameState.selectedPiece = { row: fromRow, col: fromCol };
+                
+                // Calculate valid moves for this piece
+                const piece = gameState.board[fromRow][fromCol];
+                findValidMoves(fromRow, fromCol, piece);
+                
+                // Execute the move if valid
+                const isValidMove = gameState.validMoves.some(move => 
+                    move.row === toRow && move.col === toCol
+                );
+                
+                if (isValidMove) {
+                    movePiece(toRow, toCol);
+                }
+            }
+            
+            // Update connection status UI
+            function updateConnectionStatus(status, message = '') {
+                statusIndicator.className = 'status-indicator';
+                
+                switch (status) {
+                    case 'ready':
+                        connectionStatus.textContent = 'Ready to connect';
+                        break;
+                        
+                    case 'connecting':
+                        connectionStatus.textContent = message || 'Connecting...';
+                        break;
+                        
+                    case 'connected':
+                        statusIndicator.classList.add('connected');
+                        connectionStatus.textContent = message || 'Connected';
+                        break;
+                        
+                    case 'disconnected':
+                        connectionStatus.textContent = 'Disconnected';
+                        break;
+                        
+                    case 'error':
+                        statusIndicator.classList.add('error');
+                        connectionStatus.textContent = message || 'Connection error';
+                        break;
+                }
+            }
+            
+            // Enable connection buttons
+            function enableConnectionButtons() {
+                connectBtn.disabled = false;
+                hostBtn.disabled = false;
+                joinBtn.disabled = false;
+                spectateBtn.disabled = false;
+            }
+            
+            // Initialize the board
+            function initBoard() {
+                board.innerHTML = '';
+                gameState.board = [];
+                
+                for (let row = 0; row < 8; row++) {
+                    gameState.board[row] = [];
+                    for (let col = 0; col < 8; col++) {
+                        const square = document.createElement('div');
+                        square.className = `square ${(row + col) % 2 === 0 ? 'light' : 'dark'}`;
+                        square.dataset.row = row;
+                        square.dataset.col = col;
+                        
+                        // Add click event to the square
+                        square.addEventListener('click', () => handleSquareClick(row, col));
+                        
+                        // Initialize pieces
+                        let piece = null;
+                        if ((row + col) % 2 === 1) {  // Only place pieces on dark squares
+                            if (row < 3) {
+                                piece = { color: 'black', isKing: false };
+                            } else if (row > 4) {
+                                piece = { color: 'red', isKing: false };
+                            }
+                        }
+                        
+                        gameState.board[row][col] = piece;
+                        
+                        // Render piece if exists
+                        if (piece) {
+                            const pieceElement = document.createElement('div');
+                            pieceElement.className = `piece ${piece.color}${piece.isKing ? ' king' : ''}`;
+                            square.appendChild(pieceElement);
+                        }
+                        
+                        board.appendChild(square);
+                    }
+                }
+                
+                // Reset game state
+                gameState.currentPlayer = 'red';
+                gameState.selectedPiece = null;
+                gameState.validMoves = [];
+                gameState.jumpMoves = [];
+                gameState.mustJump = false;
+                gameState.gameOver = false;
+                gameState.mustContinueJumping = false;
+                gameState.jumpingPiece = null;
+                
+                // Increase version for the new state
+                gameState.version++;
+                gameStateVersion = gameState.version;
+                
+                updateGameInfo();
+                
+                // Share the new game state if we're the host
+                if (localRole === 'red') {
+                    sendGameState();
+                    
+                    // Add game started message to chat
+                    const gameStartMessage = 'A new game has started.';
+                    broadcast({
+                        type: 'chat',
+                        name: 'System',
+                        role: 'system',
+                        message: gameStartMessage
+                    });
+                    addChatMessage('System', 'system', gameStartMessage);
+                }
+            }
+            
+            // Redraw the board based on current state
+            function redrawBoard() {
+                board.innerHTML = '';
+                
+                for (let row = 0; row < 8; row++) {
+                    for (let col = 0; col < 8; col++) {
+                        const square = document.createElement('div');
+                        square.className = `square ${(row + col) % 2 === 0 ? 'light' : 'dark'}`;
+                        square.dataset.row = row;
+                        square.dataset.col = col;
+                        
+                        // Add click event to the square
+                        square.addEventListener('click', () => handleSquareClick(row, col));
+                        
+                        // Render piece if exists
+                        const piece = gameState.board[row][col];
+                        if (piece) {
+                            const pieceElement = document.createElement('div');
+                            pieceElement.className = `piece ${piece.color}${piece.isKing ? ' king' : ''}`;
+                            square.appendChild(pieceElement);
+                        }
+                        
+                        board.appendChild(square);
+                    }
+                }
+                
+                // Reapply selection highlights if needed
+                if (gameState.selectedPiece) {
+                    const { row, col } = gameState.selectedPiece;
+                    getSquareElement(row, col).classList.add('selected');
+                    
+                    // Highlight valid moves
+                    gameState.validMoves.forEach(move => {
+                        getSquareElement(move.row, move.col).classList.add('valid-move');
+                    });
+                }
+            }
+            
+            // Update turn indicator and messages
+            function updateGameInfo() {
+                turnIndicator.className = `indicator-piece ${gameState.currentPlayer}`;
+                turnText.textContent = gameState.currentPlayer.charAt(0).toUpperCase() + gameState.currentPlayer.slice(1);
+                
+                if (gameState.gameOver) {
+                    const winner = gameState.currentPlayer === 'red' ? 'black' : 'red';
+                    message.textContent = `Game Over! ${winner.charAt(0).toUpperCase() + winner.slice(1)} wins!`;
+                } else if (gameState.mustJump) {
+                    message.textContent = "Jump is available and must be taken!";
+                } else if (isConnected || localRole === 'red') {
+                    if (localRole === gameState.currentPlayer) {
+                        message.textContent = "Your turn";
+                    } else if (localRole === 'spectator') {
+                        message.textContent = `${gameState.currentPlayer.charAt(0).toUpperCase() + gameState.currentPlayer.slice(1)}'s turn`;
+                    } else {
+                        message.textContent = "Opponent's turn";
+                    }
+                } else {
+                    message.textContent = "";
+                }
+            }
+            
+            // Handle square click
+            function handleSquareClick(row, col) {
+                // Only allow moves if:
+                // 1. The game is not over
+                // 2. It's the local player's turn
+                // 3. We are a player (not a spectator)
+                // 4. We are connected to a peer (for black) or are the host (for red)
+                if (gameState.gameOver || 
+                    localRole !== gameState.currentPlayer ||
+                    localRole === 'spectator' ||
+                    (localRole === 'black' && !isConnected)) {
+                    return;
+                }
+                
+                const piece = gameState.board[row][col];
+                const isCurrentPlayerPiece = piece && piece.color === gameState.currentPlayer;
+                
+                // If we're in the middle of a multi-jump
+                if (gameState.mustContinueJumping) {
+                    // Only the piece that just jumped can continue jumping
+                    if (gameState.jumpingPiece && 
+                        gameState.jumpingPiece.row === row && 
+                        gameState.jumpingPiece.col === col) {
+                        selectPiece(row, col);
+                    } else if (gameState.validMoves.some(move => move.row === row && move.col === col)) {
+                        // Notify peers of the move
+                        broadcast({
+                            type: 'movePiece',
+                            fromRow: gameState.selectedPiece.row,
+                            fromCol: gameState.selectedPiece.col,
+                            toRow: row,
+                            toCol: col
+                        });
+                        
+                        movePiece(row, col);
+                    }
+                    return;
+                }
+                
+                // If player must jump
+                if (gameState.mustJump) {
+                    if (isCurrentPlayerPiece && canPieceJump(row, col, piece)) {
+                        selectPiece(row, col);
+                    } else if (gameState.validMoves.some(move => move.row === row && move.col === col)) {
+                        // Notify peers of the move
+                        broadcast({
+                            type: 'movePiece',
+                            fromRow: gameState.selectedPiece.row,
+                            fromCol: gameState.selectedPiece.col,
+                            toRow: row,
+                            toCol: col
+                        });
+                        
+                        movePiece(row, col);
+                    }
+                    return;
+                }
+                
+                // Normal selection or move
+                if (isCurrentPlayerPiece) {
+                    selectPiece(row, col);
+                } else if (gameState.validMoves.some(move => move.row === row && move.col === col)) {
+                    // Notify peers of the move
+                    broadcast({
+                        type: 'movePiece',
+                        fromRow: gameState.selectedPiece.row,
+                        fromCol: gameState.selectedPiece.col,
+                        toRow: row,
+                        toCol: col
+                    });
+                    
+                    movePiece(row, col);
+                }
+            }
+            
+            // Select a piece and show valid moves
+            function selectPiece(row, col) {
+                // Reset previous selection
+                clearSelection();
+                
+                const piece = gameState.board[row][col];
+                if (!piece || piece.color !== gameState.currentPlayer) return;
+                
+                gameState.selectedPiece = { row, col };
+                getSquareElement(row, col).classList.add('selected');
+                
+                // Calculate and show valid moves
+                findValidMoves(row, col, piece);
+            }
+            
+            // Find valid moves for a piece
+            function findValidMoves(row, col, piece) {
+                gameState.validMoves = [];
+                gameState.jumpMoves = [];
+                
+                // Check for jump moves
+                const jumpMoves = getPossibleJumps(row, col, piece);
+                
+                // If there are jump moves, only consider those
+                if (jumpMoves.length > 0) {
+                    gameState.validMoves = jumpMoves;
+                    gameState.jumpMoves = jumpMoves;
+                } else if (!gameState.mustContinueJumping) {
+                    // Otherwise look for regular moves (if not in a multi-jump)
+                    gameState.validMoves = getPossibleMoves(row, col, piece);
+                }
+                
+                // Highlight valid moves
+                gameState.validMoves.forEach(move => {
+                    getSquareElement(move.row, move.col).classList.add('valid-move');
+                });
+            }
+            
+            // Get possible regular moves
+            function getPossibleMoves(row, col, piece) {
+                const moves = [];
+                const directions = [];
+                
+                // Kings can move in all directions, others only forward
+                if (piece.isKing) {
+                    directions.push({ dr: -1, dc: -1 }, { dr: -1, dc: 1 }, { dr: 1, dc: -1 }, { dr: 1, dc: 1 });
+                } else if (piece.color === 'red') {
+                    directions.push({ dr: -1, dc: -1 }, { dr: -1, dc: 1 });
+                } else {
+                    directions.push({ dr: 1, dc: -1 }, { dr: 1, dc: 1 });
+                }
+                
+                directions.forEach(dir => {
+                    const newRow = row + dir.dr;
+                    const newCol = col + dir.dc;
+                    
+                    if (isValidPosition(newRow, newCol) && !gameState.board[newRow][newCol]) {
+                        moves.push({ row: newRow, col: newCol });
+                    }
+                });
+                
+                return moves;
+            }
+            
+            // Get possible jump moves
+            function getPossibleJumps(row, col, piece) {
+                const jumps = [];
+                const directions = [];
+                
+                // Kings can jump in all directions, others only forward
+                if (piece.isKing) {
+                    directions.push({ dr: -1, dc: -1 }, { dr: -1, dc: 1 }, { dr: 1, dc: -1 }, { dr: 1, dc: 1 });
+                } else if (piece.color === 'red') {
+                    directions.push({ dr: -1, dc: -1 }, { dr: -1, dc: 1 });
+                } else {
+                    directions.push({ dr: 1, dc: -1 }, { dr: 1, dc: 1 });
+                }
+                
+                directions.forEach(dir => {
+                    const jumpRow = row + dir.dr;
+                    const jumpCol = col + dir.dc;
+                    const landRow = row + 2 * dir.dr;
+                    const landCol = col + 2 * dir.dc;
+                    
+                    if (isValidPosition(jumpRow, jumpCol) && 
+                        isValidPosition(landRow, landCol) &&
+                        gameState.board[jumpRow][jumpCol] && 
+                        gameState.board[jumpRow][jumpCol].color !== piece.color && 
+                        !gameState.board[landRow][landCol]) {
+                        jumps.push({ 
+                            row: landRow, 
+                            col: landCol,
+                            jumped: { row: jumpRow, col: jumpCol }
+                        });
+                    }
+                });
+                
+                return jumps;
+            }
+            
+            // Move piece to the selected position
+            function movePiece(row, col) {
+                if (!gameState.selectedPiece) return;
+                
+                const { row: fromRow, col: fromCol } = gameState.selectedPiece;
+                const piece = gameState.board[fromRow][fromCol];
+                
+                // Check if this is a jump move
+                const jumpMove = gameState.jumpMoves.find(move => move.row === row && move.col === col);
+                let madeJump = false;
+                
+                if (jumpMove) {
+                    // Remove the jumped piece
+                    gameState.board[jumpMove.jumped.row][jumpMove.jumped.col] = null;
+                    const jumpedSquare = getSquareElement(jumpMove.jumped.row, jumpMove.jumped.col);
+                    jumpedSquare.innerHTML = '';
+                    madeJump = true;
+                }
+                
+                // Move the piece
+                gameState.board[row][col] = gameState.board[fromRow][fromCol];
+                gameState.board[fromRow][fromCol] = null;
+                
+                // Update UI
+                const fromSquare = getSquareElement(fromRow, fromCol);
+                const toSquare = getSquareElement(row, col);
+                
+                toSquare.innerHTML = '';
+                const pieceElement = document.createElement('div');
+                pieceElement.className = `piece ${piece.color}${piece.isKing ? ' king' : ''}`;
+                toSquare.appendChild(pieceElement);
+                fromSquare.innerHTML = '';
+                
+                // Check if piece becomes king
+                if ((piece.color === 'red' && row === 0) || (piece.color === 'black' && row === 7)) {
+                    piece.isKing = true;
+                    pieceElement.classList.add('king');
+                    
+                    // Announce king promotion
+                    const kingMessage = `${piece.color.charAt(0).toUpperCase() + piece.color.slice(1)} piece promoted to king!`;
+                    broadcast({
+                        type: 'chat',
+                        name: 'System',
+                        role: 'system',
+                        message: kingMessage
+                    });
+                    addChatMessage('System', 'system', kingMessage);
+                }
+                
+                // Clear selection
+                clearSelection();
+                
+                // Check for additional jumps
+                if (madeJump) {
+                    const additionalJumps = getPossibleJumps(row, col, piece);
+                    if (additionalJumps.length > 0) {
+                        // Must continue jumping with the same piece
+                        gameState.mustContinueJumping = true;
+                        gameState.jumpingPiece = { row, col };
+                        selectPiece(row, col);
+                        return;
+                    }
+                }
+                
+                // End turn and switch players
+                gameState.mustContinueJumping = false;
+                gameState.jumpingPiece = null;
+                
+                // Switch players
+                gameState.currentPlayer = gameState.currentPlayer === 'red' ? 'black' : 'red';
+                
+                // Check if next player must jump
+                checkForMandatoryJumps();
+                
+                // Check for game over (no valid moves)
+                checkForGameOver();
+                
+                updateGameInfo();
+                
+                // Send updated game state to peers
+                sendGameState();
+            }
+            
+            // Check if any piece of the current player can jump
+            function checkForMandatoryJumps() {
+                gameState.mustJump = false;
+                
+                for (let row = 0; row < 8; row++) {
+                    for (let col = 0; col < 8; col++) {
+                        const piece = gameState.board[row][col];
+                        if (piece && piece.color === gameState.currentPlayer && canPieceJump(row, col, piece)) {
+                            gameState.mustJump = true;
+                            return;
+                        }
+                    }
+                }
+            }
+            
+            // Check if a specific piece can jump
+            function canPieceJump(row, col, piece) {
+                return getPossibleJumps(row, col, piece).length > 0;
+            }
+            
+            // Check if game is over (no valid moves for current player)
+            function checkForGameOver() {
+                let hasValidMove = false;
+                let redPieces = 0;
+                let blackPieces = 0;
+                
+                for (let row = 0; row < 8; row++) {
+                    for (let col = 0; col < 8; col++) {
+                        const piece = gameState.board[row][col];
+                        if (piece) {
+                            if (piece.color === 'red') redPieces++;
+                            else blackPieces++;
+                            
+                            if (piece.color === gameState.currentPlayer) {
+                                if (getPossibleJumps(row, col, piece).length > 0 || 
+                                    getPossibleMoves(row, col, piece).length > 0) {
+                                    hasValidMove = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Game over if no valid moves or one player has no pieces
+                if (!hasValidMove || redPieces === 0 || blackPieces === 0) {
+                    gameState.gameOver = true;
+                    
+                    // Announce game over
+                    const winner = gameState.currentPlayer === 'red' ? 'black' : 'red';
+                    const gameOverMessage = `Game Over! ${winner.charAt(0).toUpperCase() + winner.slice(1)} wins!`;
+                    
+                    // Add to chat
+                    broadcast({
+                        type: 'chat',
+                        name: 'System',
+                        role: 'system',
+                        message: gameOverMessage
+                    });
+                    addChatMessage('System', 'system', gameOverMessage);
+                }
+            }
+            
+            // Clear selections and highlights
+            function clearSelection() {
+                gameState.selectedPiece = null;
+                gameState.validMoves = [];
+                
+                // Remove highlights
+                document.querySelectorAll('.square').forEach(square => {
+                    square.classList.remove('selected');
+                    square.classList.remove('valid-move');
+                });
+            }
+            
+            // Get square element by coordinates
+            function getSquareElement(row, col) {
+                return document.querySelector(`.square[data-row="${row}"][data-col="${col}"]`);
+            }
+            
+            // Check if position is valid
+            function isValidPosition(row, col) {
+                return row >= 0 && row < 8 && col >= 0 && col < 8;
+            }
+            
+            // Restart game
+            function restartGame() {
+                // Only host can restart the game
+                if (localRole === 'red') {
+                    // Start a new game
+                    initBoard();
+                    
+                    // Notify peers
+                    broadcast({ type: 'restart' });
+                }
+            }
+            
+            // Add chat message to UI
+            function addChatMessage(name, role, text) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'chat-message';
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.className = `chat-name ${role}`;
+                nameSpan.textContent = name + ':';
+                
+                const messageText = document.createElement('span');
+                messageText.textContent = ' ' + text;
+                
+                messageDiv.appendChild(nameSpan);
+                messageDiv.appendChild(messageText);
+                chatMessages.appendChild(messageDiv);
+                
+                // Scroll to bottom
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            // Send chat message
+            function sendChatMessage() {
+                const text = chatInput.value.trim();
+                if (!text) return;
+                
+                // Clear input
+                chatInput.value = '';
+                
+                // Get role for color coding
+                let chatRole = localRole;
+                
+                // Create message object
+                const chatMessage = {
+                    type: 'chat',
+                    name: localName,
+                    role: chatRole,
+                    message: text
+                };
+                
+                // Add to local chat
+                addChatMessage(localName, chatRole, text);
+                
+                // Send to peers
+                broadcast(chatMessage);
+            }
+            
+            // Event Listeners
+            connectBtn.addEventListener('click', () => {
+                const peerId = peerIdInput.value.trim();
+                if (peerId) {
+                    connectToPeer(peerId);
+                }
+            });
+            
+            hostBtn.addEventListener('click', hostGame);
+            joinBtn.addEventListener('click', joinGame);
+            spectateBtn.addEventListener('click', becomeSpectator);
+            restartBtn.addEventListener('click', restartGame);
+            
+            // Chat event listeners
+            chatSendBtn.addEventListener('click', sendChatMessage);
+            chatInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendChatMessage();
+                }
+            });
+            
+            // Initialize PeerJS and the game
+            initPeer();
+            initBoard(); // Initialize an empty board for preview
+        });
+    </script>
+</body>
+</html>
+
+
